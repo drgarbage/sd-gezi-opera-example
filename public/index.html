@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Web Cam Interface</title>
+    <style>
+        .rounded {
+            border-radius: 24px;
+        }
+
+        .rounded-full {
+            border-radius: 100%;
+        }
+
+        .row { display: flex; flex-direction: row; align-items: center;}
+        .col { display: flex; flex-direction: column; }
+
+        body {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            width: 512px;
+            height: 800px;
+        }
+
+        .card {
+            background-color: white;
+            overflow: hidden;
+            flex-direction: column;
+            box-shadow: 0px 0px 40px rgba(0,0,0,0.5);
+        }
+        .card .header .avatar {
+            width: 96px;
+            height: 96px;
+            border-radius: 100%;
+            margin: 16px;
+        }
+
+        .card .header .desc {
+            color: lightslategrey;
+            padding-bottom: 8px
+        }
+
+        .card .header .character-option {
+            width: 44px;
+            height: 44px;
+            margin-right: 8px;
+            border-radius: 120px;
+            box-sizing: border-box;
+            opacity: 0.4;
+        }
+
+        .card .header .character-option.selected {
+            opacity: 1;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        }
+
+        .card .media {
+            width: 100%;
+            background-color: black;
+            aspect-ratio: 1;
+            object-fit: cover;
+        }
+
+        .card .actions {
+            display: flex;
+            flex: 1;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        .card .actions .action {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+        }
+
+        .card .actions * {
+            cursor: pointer;
+        }
+
+        .card .actions .icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 100%;
+            border-width: 0;
+        }
+
+        .card .action {
+            flex: 1;
+            width: 100%;
+            border: none;
+            font-size: 24px;
+            font-weight: 400;
+            color: lightslategrey;
+        }
+
+        #dialog, #loading {
+            display: none;
+            position: absolute;
+            z-index: 50;
+        }
+        
+        #result {
+            width: 512px;
+            height: 512px;
+            background-color: black;
+        }
+
+        #dialog .action {
+            line-height: 400%;
+            text-align: center;
+        }
+
+        #loading {
+            padding: 64px;
+        }
+
+        #apihost {
+            border: none;
+            padding: 8px;
+        }
+        #model {
+            border: none;
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container card rounded col">
+        <div class="header row">
+            <div>
+                <img id="avatar" class="avatar" alt="opt01" src="images/001.png" />
+            </div>
+            <div>
+                <div class="desc">點此選擇角色</div>
+                <div class="row">
+                    <img class="character-option" alt="opt01" onclick="avatar.src = this.src" src="images/001.png" />
+                    <img class="character-option" alt="opt01" onclick="avatar.src = this.src" src="images/002.png" />
+                    <img class="character-option" alt="opt01" onclick="avatar.src = this.src" src="images/003.png" />
+                    <img class="character-option" alt="opt01" onclick="avatar.src = this.src" src="images/004.png" />
+                </div>
+            </div>
+        </div>
+        <div class="settings col">
+            <input id="apihost" type="text" value="http://ai.printii.com" onblur="loadModels()" />
+            <select id="model" type="text"></select>
+        </div>
+        <video class="media" id="cameraFeed"></video>
+        <div class="actions">
+            <img id="photo" class="icon" alt="" />
+            <div class="action" onclick="onTakePhoto()">拍攝</div>
+            <img class="icon" alt="" src="images/image.png" onclick="file.click()" />
+            <input id="file" type="file" style="display: none;" onchange="onLoadPhoto()" />
+        </div>
+    </div>
+
+    <div id="loading" class="card rounded col">
+        Loading ...
+    </div> 
+
+    <div id="dialog" class="card rounded col">
+        <img id="result" alt="" />
+        <div class="action" onclick="hiderResult()">關閉</div>
+    </div>
+
+    <script src="js/sdapi.js"></script>
+
+    <script>
+        
+        // capture image ui http://localhost:7860
+        const apihost = document.getElementById('apihost');
+        const model = document.getElementById('model');
+        const avatar = document.getElementById('avatar');
+        const video = document.getElementById('cameraFeed');
+        const photo = document.getElementById('photo');
+        const file = document.getElementById('file');
+
+        // result dialog
+        const dialog = document.getElementById('dialog');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            connectCamera();
+            loadModels();
+        });
+
+        function loadModels() {
+            new SDAPI(apihost.value)
+                .models()
+                .then(ms => {
+                    model.innerHTML = "";
+                    for(let m of ms) {
+                        let opt = document.createElement('option');
+                        opt.innerText = m.title;
+                        opt.value = m.hash;
+                        model.appendChild(opt);
+                    }
+                })
+                .catch(console.error);
+        }
+
+        async function generate({faceImage, characterImage}) {
+            setLoading(true);
+
+            const configs = {
+                denoising_strength: 0,
+                alwayson_scripts: {
+                    reactor: {
+                        args: [
+                            faceImage,      // #0
+                            true,           // #1 Enable ReActor
+                            '0',            // #2 Comma separated face number(s) from swap-source image
+                            '0',            // #3 Comma separated face number(s) for target image (result)
+                            "",             // #4 model path
+                            'CodeFormer',   // #4 Restore Face: None; CodeFormer; GFPGAN
+                            1,              // #5 Restore visibility value
+                            true,           // #7 Restore face -> Upscale
+                            'None',         // #8 Upscaler (type 'None' if doesn't need), see full list here: http://127.0.0.1:7860/sdapi/v1/script-info -> reactor -> sec.8
+                            1,              // #9 Upscaler scale value
+                            1,              // #10 Upscaler visibility (if scale = 1)
+                            false,          // #11 Swap in source image
+                            true,           // #12 Swap in generated image
+                            0,              // #13 Console Log Level (0 - min, 1 - med or 2 - max)
+                            0,              // #14 Gender Detection (Source) (0 - No, 1 - Female Only, 2 - Male Only)
+                            0,              // #15 Gender Detection (Target) (0 - No, 1 - Female Only, 2 - Male Only)
+                            false,          // #16 Save the original image(s) made before swapping
+                            0.8,            // #17 CodeFormer Weight (0 = maximum effect, 1 = minimum effect), 0.5 - by default
+                            false,          // #18 Source Image Hash Check, True - by default
+                            false,          // #19 Target Image Hash Check, False - by default
+                            "CUDA",         // #20 CPU or CUDA (if you have it), CPU - by default
+                            true,           // #21 Face Mask Correction
+                            0,              // #22 Select Source, 0 - Image, 1 - Face Model, 2 - Source Folder
+                            "",             // #23 Filename of the face model (from "models/reactor/faces"), e.g. elena.safetensors, don't forger to set #22 to 1
+                        ]
+                    }
+                }
+            }
+
+            const sdapi = new SDAPI(apihost.value);
+            const [ swappedImage ] = await sdapi.img2img(characterImage, configs);
+            const [ image ] = await sdapi.img2img(swappedImage, { 
+                prompt: 'anime style, 2d, 2.5d, realistic sketch, lineart, masterpiece',
+                width: 1024,
+                height: 1024,
+                negative_prompt: '(worse quality:2), (bad quality:2), (normal quality:1.5), 3d',
+                cfg_scale: 9,
+                denoising_strength: 0.3,
+                override_settings: {
+                    sd_model_checkpoint: model.value
+                }
+            });
+
+            setLoading(false);
+            return image;
+        }
+
+        function connectCamera() {
+            
+            const mediaConfig = { video: { width: 768, height: 768 } };
+            
+            navigator
+                .mediaDevices
+                .getUserMedia(mediaConfig)
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch(err => {
+                    console.error("Error: " + err);
+                });
+        }
+
+        function snapshot() {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/png');
+
+            return imageData;
+        }
+
+        function url2b64Image(url) {    
+            return new Promise(async function(resolve, reject) {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    resolve(reader.result);
+                }
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function file2b64Image(file) {
+            return new Promise(async function(resolve, reject) {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    resolve(reader.result);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function showResult(imageUrl) {
+            result.src = 'data:image/png;base64,' + imageUrl;
+            dialog.style.display = 'block';
+        }
+        
+        function hiderResult() {
+            dialog.style.display = 'none';
+        }
+
+        function setLoading(isLoading) {
+            loading.style.display = isLoading ? 'block' : 'none';
+        }
+
+        async function onTakePhoto() {
+            const faceImage = snapshot();
+            photo.src = faceImage;
+            
+            const characterImage = await url2b64Image(avatar.src);
+            const result = await generate({ faceImage, characterImage });
+            showResult(result);
+        }
+
+        async function onLoadPhoto() {
+            const faceImageFile = file.files[0];
+            const faceImage = await file2b64Image(faceImageFile);
+            photo.src = faceImage;
+            
+            const characterImage = await url2b64Image(avatar.src);
+            const result = await generate({ faceImage, characterImage });
+            showResult(result);
+        }
+    </script>
+</body>
+</html>
