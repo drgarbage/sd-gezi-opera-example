@@ -17,7 +17,13 @@ This example demonstrates how to work with Automatic1111 using the reactor plugi
     ```
 
 4. Change the host (http://localhost:7860) to your host address.
-5. Take a picture, or upload an image to start generation.
+5. Start the Stable Diffusion Web UI with following args:
+    ```
+    // webui-user.bat
+
+    set COMMANDLINE_ARGS= --share --listen --api --cors-allow-origins=* 
+    ```
+6. Take a picture, or upload an image to start generation.
     - The camera should open by default; if it doesn't, check the security settings of your browser. For some mobile devices, camera access is only allowed when visiting with HTTPS.
 
 ## File structure
